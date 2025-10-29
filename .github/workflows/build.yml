@@ -338,6 +338,107 @@ jobs:
           # Pass GitHub token for maccel-rpm-builder dispatch
           GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN || github.token }}
 
+      - name: Generate additional image tags
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        id: tags
+        run: |
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          FEDORA_VERSION="${{ steps.kernel.outputs.fedora_version }}"
+          TIMESTAMP=$(date -u +"%Y%m%d")
+          
+          # Generate semantic tags
+          KERNEL_TAG="kernel-${KERNEL_VERSION}"
+          MACCEL_TAG="maccel-${MACCEL_VERSION}"
+          FEDORA_TAG="fedora-${FEDORA_VERSION}"
+          DATE_TAG="${TIMESTAMP}"
+          
+          echo "kernel_tag=${KERNEL_TAG}" >> $GITHUB_OUTPUT
+          echo "maccel_tag=${MACCEL_TAG}" >> $GITHUB_OUTPUT
+          echo "fedora_tag=${FEDORA_TAG}" >> $GITHUB_OUTPUT
+          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
+          
+          echo "Generated tags:"
+          echo "  - ${KERNEL_TAG}"
+          echo "  - ${MACCEL_TAG}"
+          echo "  - ${FEDORA_TAG}"
+          echo "  - ${DATE_TAG}"
+
+      - name: Tag image with additional tags
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild"
+          
+          # Pull the latest image that was just built
+          docker pull "${IMAGE_NAME}:latest"
+          
+          # Tag with semantic versions
+          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
+          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
+          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
+          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
+          
+          # Push additional tags
+          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
+          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
+          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
+          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
+          
+          echo "Successfully tagged and pushed additional image tags"
+
+      - name: Validate image signing
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        run: |
+          echo "Validating image signature..."
+          
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild:latest"
+          
+          # Install cosign if not available
+          if ! command -v cosign &> /dev/null; then
+            echo "Installing cosign..."
+            curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+            sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+            sudo chmod +x /usr/local/bin/cosign
+          fi
+          
+          # Wait a moment for image to be fully available
+          sleep 10
+          
+          # Verify keyless signature
+          echo "Verifying keyless signature..."
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "$IMAGE_NAME"
+          
+          echo "✅ Image signature validation successful!"
+
+      - name: Generate verification documentation
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild"
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          
+          echo "=== Image Verification Commands ==="
+          echo ""
+          echo "# Verify latest image:"
+          echo "cosign verify \\"
+          echo "  --certificate-identity-regexp=\"https://github.com/${{ github.repository }}\" \\"
+          echo "  --certificate-oidc-issuer=\"https://token.actions.githubusercontent.com\" \\"
+          echo "  ${IMAGE_NAME}:latest"
+          echo ""
+          echo "# Verify kernel-specific tag:"
+          echo "cosign verify \\"
+          echo "  --certificate-identity-regexp=\"https://github.com/${{ github.repository }}\" \\"
+          echo "  --certificate-oidc-issuer=\"https://token.actions.githubusercontent.com\" \\"
+          echo "  ${IMAGE_NAME}:kernel-${KERNEL_VERSION}"
+          echo ""
+          echo "# Install with signature verification:"
+          echo "rpm-ostree rebase ostree-image-signed:docker://${IMAGE_NAME}:latest"
+          echo ""
+          echo "==================================="
+
       - name: Report build completion
         if: always()
         run: |
@@ -363,6 +464,8 @@ jobs:
             echo "Kernel Version: ${{ steps.kernel.outputs.version }}"
             echo "Maccel Version: ${{ steps.maccel.outputs.version }}"
             echo "Packages Used: ${{ steps.packages.outputs.release_tag }}"
+            echo "Signature: Keyless cosign (GitHub OIDC)"
+            echo "Verification: See commands above"
           else
             echo "Build Status: FAILED"
             echo "Check the logs above for error details"
@@ -378,16 +481,31 @@ jobs:
           echo "${{ steps.maccel.outputs.version }}" > .cache/last-maccel-version
           echo "Cache updated for future build optimizations"
 
+      - name: Clean up old container images
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        uses: snok/container-retention-policy@v3.0.0
+        with:
+          image-names: myaurorabluebuild
+          cut-off: 7 days ago UTC
+          account-type: personal
+          org-name: ${{ github.repository_owner }}
+          keep-at-least: 5
+          untagged-only: false
+          skip-tags: latest
+          token: ${{ github.token }}
+
       - name: Clean up failed builds
         if: failure() && steps.final_build_check.outputs.should_build == 'true'
         continue-on-error: true
         run: |
           echo "Cleaning up any partial builds or artifacts..."
           
-          # Note: Actual cleanup would require additional permissions and tools
-          # This is a placeholder for cleanup logic that could include:
-          # - Removing failed container images
-          # - Cleaning up temporary artifacts
-          # - Notifying about build failures
+          # Clean up any untagged or failed images
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild"
           
+          # List and potentially clean up untagged images (requires additional permissions)
+          echo "Checking for untagged images to clean up..."
+          
+          # Note: Actual cleanup of failed builds would require additional permissions
+          # This serves as a placeholder for manual cleanup procedures
           echo "Failed build cleanup completed"
