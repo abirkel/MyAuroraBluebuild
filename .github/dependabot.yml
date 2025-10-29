@@ -1,6 +1,65 @@
 version: 2
 updates:
+  # GitHub Actions updates
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    commit-message:
+      prefix: "ci"
+      prefix-development: "ci"
+      include: "scope"
+    reviewers:
+      - "@abirkel"
+    assignees:
+      - "@abirkel"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-requests-limit: 5
+
+  # Docker base image updates (for any Dockerfiles)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:00"
+    commit-message:
+      prefix: "docker"
+      prefix-development: "docker"
+      include: "scope"
+    reviewers:
+      - "@abirkel"
+    assignees:
+      - "@abirkel"
+    labels:
+      - "dependencies"
+      - "docker"
+    open-pull-requests-limit: 3
+
+  # Blue Build recipe dependencies (if any YAML references)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "first-monday"
+      time: "06:00"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps"
+      include: "scope"
+    reviewers:
+      - "@abirkel"
+    assignees:
+      - "@abirkel"
+    labels:
+      - "dependencies"
+      - "python"
+    open-pull-requests-limit: 2
+    # Only update if we have Python dependencies
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
