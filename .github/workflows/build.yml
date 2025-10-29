@@ -29,6 +29,167 @@ jobs:
           # !! Add your recipes here
           - recipe.yml
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect base image kernel version
+        id: kernel
+        run: |
+          # Extract kernel version from Aurora base image
+          BASE_IMAGE=$(grep "base-image:" recipes/${{ matrix.recipe }} | awk '{print $2}')
+          IMAGE_VERSION=$(grep "image-version:" recipes/${{ matrix.recipe }} | awk '{print $2}')
+          FULL_IMAGE="${BASE_IMAGE}:${IMAGE_VERSION}"
+          
+          echo "Detecting kernel version from base image: $FULL_IMAGE"
+          
+          # Get kernel version from image labels
+          KERNEL_VERSION=$(skopeo inspect docker://$FULL_IMAGE | jq -r '.Labels["ostree.linux"] // empty')
+          
+          if [[ -z "$KERNEL_VERSION" ]]; then
+            echo "Warning: Could not detect kernel version from image labels, trying alternative method..."
+            # Fallback: try to get from image config
+            KERNEL_VERSION=$(skopeo inspect docker://$FULL_IMAGE | jq -r '.Config.Labels["ostree.linux"] // empty')
+          fi
+          
+          if [[ -z "$KERNEL_VERSION" ]]; then
+            echo "Error: Could not detect kernel version from base image"
+            exit 1
+          fi
+          
+          # Extract Fedora version from kernel version
+          FEDORA_VERSION=$(echo "$KERNEL_VERSION" | sed -n 's/.*\.fc\([0-9]\+\)\..*/\1/p')
+          if [[ -z "$FEDORA_VERSION" ]]; then
+            echo "Warning: Could not extract Fedora version, defaulting to 41"
+            FEDORA_VERSION="41"
+          fi
+          
+          echo "version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+          echo "fedora_version=$FEDORA_VERSION" >> $GITHUB_OUTPUT
+          echo "base_image=$FULL_IMAGE" >> $GITHUB_OUTPUT
+          
+          echo "Detected kernel version: $KERNEL_VERSION"
+          echo "Detected Fedora version: $FEDORA_VERSION"
+
+      - name: Get latest maccel version
+        id: maccel
+        run: |
+          # Get latest maccel version from upstream
+          MACCEL_VERSION=$(gh api repos/Gnarus-G/maccel/releases/latest --jq '.tag_name' | sed 's/^v//')
+          
+          if [[ -z "$MACCEL_VERSION" ]]; then
+            echo "Warning: Could not detect maccel version, defaulting to 1.0.0"
+            MACCEL_VERSION="1.0.0"
+          fi
+          
+          echo "version=$MACCEL_VERSION" >> $GITHUB_OUTPUT
+          echo "Latest maccel version: $MACCEL_VERSION"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Check for existing maccel packages
+        id: packages
+        run: |
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
+          
+          echo "Checking for existing packages with release tag: $RELEASE_TAG"
+          
+          # Check if release exists
+          if gh api repos/abirkel/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+            echo "Existing packages found for release: $RELEASE_TAG"
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+            echo "No existing packages found for release: $RELEASE_TAG"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Trigger maccel build if needed
+        if: steps.packages.outputs.found == 'false'
+        run: |
+          echo "Triggering maccel RPM build..."
+          
+          # Send repository dispatch to maccel-rpm-builder
+          gh api repos/abirkel/maccel-rpm-builder/dispatches \
+            --method POST \
+            --field event_type=build-for-kernel \
+            --field client_payload="{
+              \"kernel_version\": \"${{ steps.kernel.outputs.version }}\",
+              \"fedora_version\": \"${{ steps.kernel.outputs.fedora_version }}\",
+              \"trigger_repo\": \"${{ github.repository }}\",
+              \"maccel_version\": \"${{ steps.maccel.outputs.version }}\"
+            }"
+          
+          echo "Repository dispatch sent successfully"
+        env:
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN || github.token }}
+
+      - name: Wait for maccel build completion
+        if: steps.packages.outputs.found == 'false'
+        run: |
+          echo "Waiting for maccel build to complete..."
+          
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
+          MAX_WAIT=1800  # 30 minutes
+          POLL_INTERVAL=30  # 30 seconds
+          WAIT_TIME=0
+          
+          while [[ $WAIT_TIME -lt $MAX_WAIT ]]; do
+            echo "Checking for packages... (waited ${WAIT_TIME}s)"
+            
+            if gh api repos/abirkel/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
+              echo "Packages are now available!"
+              break
+            fi
+            
+            echo "Packages not ready yet, waiting ${POLL_INTERVAL}s..."
+            sleep $POLL_INTERVAL
+            WAIT_TIME=$((WAIT_TIME + POLL_INTERVAL))
+          done
+          
+          if [[ $WAIT_TIME -ge $MAX_WAIT ]]; then
+            echo "Error: Timeout waiting for packages after ${MAX_WAIT}s"
+            echo "Build will continue, but maccel integration may fail"
+            echo "Check maccel-rpm-builder workflow status manually"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Verify package availability
+        run: |
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          FEDORA_VERSION="${{ steps.kernel.outputs.fedora_version }}"
+          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
+          
+          # Generate expected package URLs
+          BASE_URL="https://github.com/abirkel/maccel-rpm-builder/releases/download/$RELEASE_TAG"
+          KMOD_URL="${BASE_URL}/kmod-maccel-${MACCEL_VERSION}-1.fc${FEDORA_VERSION}.x86_64.rpm"
+          CLI_URL="${BASE_URL}/maccel-${MACCEL_VERSION}-1.fc${FEDORA_VERSION}.x86_64.rpm"
+          
+          echo "Verifying package availability:"
+          echo "  kmod-maccel: $KMOD_URL"
+          echo "  maccel CLI: $CLI_URL"
+          
+          # Check if packages are accessible
+          if curl -I "$KMOD_URL" 2>/dev/null | grep -q "200 OK"; then
+            echo "✓ kmod-maccel package is accessible"
+          else
+            echo "⚠ kmod-maccel package may not be accessible"
+          fi
+          
+          if curl -I "$CLI_URL" 2>/dev/null | grep -q "200 OK"; then
+            echo "✓ maccel CLI package is accessible"
+          else
+            echo "⚠ maccel CLI package may not be accessible"
+          fi
+
       # the build is fully handled by the reusable github action
       - name: Build Custom Image
         uses: blue-build/github-action@v1.8
@@ -43,4 +204,4 @@ jobs:
           maximize_build_space: true
         env:
           # Pass GitHub token for maccel-rpm-builder dispatch
-          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN || github.token }}

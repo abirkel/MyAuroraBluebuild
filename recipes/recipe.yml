@@ -13,9 +13,12 @@ image-version: latest # Always use latest for automatic kernel updates
 # you can include multiple instances of the same module
 modules:
   # Custom maccel integration (must be first for dependencies)
+  # This script handles kernel version detection, RPM package coordination,
+  # and installation of maccel mouse acceleration
   - type: script
     scripts:
       - install-maccel.sh
+      - validate-maccel.sh
 
   # Package management - remove unwanted packages
   - type: dnf
