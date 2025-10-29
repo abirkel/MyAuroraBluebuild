@@ -34,9 +34,13 @@ jobs:
         uses: blue-build/github-action@v1.8
         with:
           recipe: ${{ matrix.recipe }}
-          cosign_private_key: ${{ secrets.SIGNING_SECRET }}
+          # Using keyless signing (recommended) - omit cosign_private_key for keyless signing
+          # cosign_private_key: ${{ secrets.SIGNING_SECRET }}  # Only for private key signing
           registry_token: ${{ github.token }}
           pr_event_number: ${{ github.event.number }}
 
           # enabled by default, disable if your image is small and you want faster builds
           maximize_build_space: true
+        env:
+          # Pass GitHub token for maccel-rpm-builder dispatch
+          DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
