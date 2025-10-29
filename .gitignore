@@ -32,3 +32,8 @@ Thumbs.db
 # Environment files
 .env
 .env.local
+
+# Blue Build template files
+cosign.key
+cosign.private
+/Containerfile

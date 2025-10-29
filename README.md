@@ -1,4 +1,4 @@
-# MyAuroraBluebuild
+# MyAuroraBluebuild &nbsp; [![bluebuild build badge](https://github.com/abirkel/MyAuroraBluebuild/actions/workflows/build.yml/badge.svg)](https://github.com/abirkel/MyAuroraBluebuild/actions/workflows/build.yml)
 
 > Aurora-based Fedora Atomic image with maccel mouse acceleration and custom packages
 
@@ -14,13 +14,27 @@ A Blue Build-based custom image that provides [Aurora's](https://getaurora.dev/)
 
 ## Installation
 
-Rebase your existing Fedora Atomic system:
+> [!WARNING]  
+> [This is an experimental feature](https://www.fedoraproject.org/wiki/Changes/OstreeNativeContainerStable), try at your own discretion.
 
-```bash
-# Rebase to signed image
-rpm-ostree rebase ostree-image-signed:docker://ghcr.io/USERNAME/myaurorabluebuild:latest
-systemctl reboot
-```
+To rebase an existing atomic Fedora installation to the latest build:
+
+- First rebase to the unsigned image, to get the proper signing keys and policies installed:
+  ```
+  rpm-ostree rebase ostree-unverified-registry:ghcr.io/abirkel/myaurorabluebuild:latest
+  ```
+- Reboot to complete the rebase:
+  ```
+  systemctl reboot
+  ```
+- Then rebase to the signed image, like so:
+  ```
+  rpm-ostree rebase ostree-image-signed:docker://ghcr.io/abirkel/myaurorabluebuild:latest
+  ```
+- Reboot again to complete the installation
+  ```
+  systemctl reboot
+  ```
 
 ## Maccel Usage
 
@@ -55,6 +69,14 @@ This image is built using Blue Build's recipe.yml configuration. See `recipes/re
 ## Architecture
 
 MyAuroraBluebuild coordinates with [maccel-rpm-builder](../maccel-rpm-builder) to ensure maccel packages are built for the exact kernel version in the Aurora base image.
+
+## Verification
+
+These images are signed with [Sigstore](https://www.sigstore.dev/)'s [cosign](https://github.com/sigstore/cosign). You can verify the signature by downloading the `cosign.pub` file from this repo and running the following command:
+
+```bash
+cosign verify --key cosign.pub ghcr.io/abirkel/myaurorabluebuild
+```
 
 ## Resources
 
