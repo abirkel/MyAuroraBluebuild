@@ -297,36 +297,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Verify package availability
-        if: steps.final_build_check.outputs.should_build == 'true'
-        run: |
-          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
-          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
-          FEDORA_VERSION="${{ steps.kernel.outputs.fedora_version }}"
-          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
-          
-          # Generate expected package URLs
-          BASE_URL="https://github.com/abirkel/maccel-rpm-builder/releases/download/$RELEASE_TAG"
-          KMOD_URL="${BASE_URL}/kmod-maccel-${MACCEL_VERSION}-1.fc${FEDORA_VERSION}.x86_64.rpm"
-          CLI_URL="${BASE_URL}/maccel-${MACCEL_VERSION}-1.fc${FEDORA_VERSION}.x86_64.rpm"
-          
-          echo "Verifying package availability:"
-          echo "  kmod-maccel: $KMOD_URL"
-          echo "  maccel CLI: $CLI_URL"
-          
-          # Check if packages are accessible
-          if curl -I "$KMOD_URL" 2>/dev/null | grep -q "200 OK"; then
-            echo "✓ kmod-maccel package is accessible"
-          else
-            echo "⚠ kmod-maccel package may not be accessible"
-          fi
-          
-          if curl -I "$CLI_URL" 2>/dev/null | grep -q "200 OK"; then
-            echo "✓ maccel CLI package is accessible"
-          else
-            echo "⚠ maccel CLI package may not be accessible"
-          fi
-
       # the build is fully handled by the reusable github action
       - name: Build Custom Image
         if: steps.final_build_check.outputs.should_build == 'true'
