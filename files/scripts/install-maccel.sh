@@ -311,40 +311,7 @@ verify_maccel_configuration() {
     return 0
 }
 
-# Function to handle fallback scenarios
-handle_fallback() {
-    local error_msg="$1"
-    
-    log_error "Maccel integration failed: $error_msg"
-    log_warn "Activating fallback mechanisms..."
-    
-    # Use the dedicated fallback script
-    if [[ -f "/usr/share/ublue-os/scripts/maccel-fallback.sh" ]]; then
-        /usr/share/ublue-os/scripts/maccel-fallback.sh "$error_msg"
-    elif [[ -f "$(dirname "$0")/maccel-fallback.sh" ]]; then
-        "$(dirname "$0")/maccel-fallback.sh" "$error_msg"
-    else
-        # Basic fallback if script not found
-        log_warn "Fallback script not found, creating basic notice"
-        cat > /etc/maccel-integration-notice.txt <<EOF
-NOTICE: Maccel Integration Failed
 
-The maccel mouse acceleration driver could not be integrated during image build.
-Error: $error_msg
-
-To install maccel manually after deployment:
-1. Install maccel using the upstream installer:
-   curl -sSL https://raw.githubusercontent.com/Gnarus-G/maccel/main/install.sh | bash
-2. Add your user to the maccel group: sudo usermod -aG maccel \$USER
-3. Reboot to load the kernel module
-
-For more information, visit: https://github.com/Gnarus-G/maccel
-EOF
-    fi
-    
-    log_info "Fallback mechanisms activated"
-    return 0
-}
 
 # Main execution function
 main() {
@@ -353,8 +320,8 @@ main() {
     # Step 1: Detect kernel version
     local kernel_version
     if ! kernel_version=$(detect_kernel_version); then
-        handle_fallback "Failed to detect kernel version"
-        return 0
+        log_error "Failed to detect kernel version - build cannot continue"
+        return 1
     fi
     
     # Step 2: Extract Fedora version
@@ -379,14 +346,14 @@ main() {
         
         # Step 5: Trigger maccel RPM build
         if ! trigger_maccel_build "$kernel_version" "$fedora_version" "$maccel_version"; then
-            handle_fallback "Failed to trigger maccel RPM build"
-            return 0
+            log_error "Failed to trigger maccel RPM build - build cannot continue"
+            return 1
         fi
         
         # Step 6: Wait for build completion
         if ! wait_for_packages "$kernel_version" "$maccel_version"; then
-            handle_fallback "Timeout waiting for maccel RPM build"
-            return 0
+            log_error "Timeout waiting for maccel RPM build - build cannot continue"
+            return 1
         fi
     else
         log_info "Packages already exist, skipping build trigger"
@@ -400,8 +367,8 @@ main() {
     
     # Step 8: Download and install packages
     if ! install_packages "$kmod_url" "$cli_url"; then
-        handle_fallback "Failed to download and install maccel packages"
-        return 0
+        log_error "Failed to download and install maccel packages - build cannot continue"
+        return 1
     fi
     
     # Step 9: Verify configuration
