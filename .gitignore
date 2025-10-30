@@ -1,3 +1,39 @@
+# Blue Build artifacts and development files
+.kiro/
+.vscode/
+.rpm-integration-docs/
+
+# Build artifacts
+*.rpm
+*.log
+build/
+dist/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+*~
+*.swp
+*.swo
+.vimrc.local
+
+# Environment files
+.env
+.env.local
+
+# Blue Build template files
 cosign.key
 cosign.private
 /Containerfile

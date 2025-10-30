@@ -1,15 +1,21 @@
 name: bluebuild
 on:
   schedule:
-    - cron:
-        "00 06 * * *" # build at 06:00 UTC every day
+    - cron: "00 06 * * *" # build at 06:00 UTC every day
         # (20 minutes after last ublue images start building)
   push:
     paths-ignore: # don't rebuild if only documentation has changed
       - "**.md"
-
+      - "docs/**"
+      - ".rpm-integration-docs/**"
   pull_request:
   workflow_dispatch: # allow manually triggering builds
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even if no changes detected'
+        required: false
+        default: false
+        type: boolean
 concurrency:
   # only run one build at a time
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
@@ -29,14 +35,438 @@ jobs:
           # !! Add your recipes here
           - recipe.yml
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          if [[ -z "${{ secrets.DISPATCH_TOKEN }}" ]]; then
+            echo "❌ ERROR: DISPATCH_TOKEN secret is not set"
+            echo "This token is required for triggering maccel-rpm-builder workflows"
+            echo "Please set DISPATCH_TOKEN in repository secrets with 'repo' scope"
+            echo "See docs/SETUP_SECRETS.md for setup instructions"
+            exit 1
+          fi
+          echo "✅ DISPATCH_TOKEN is configured"
+
+      - name: Check for build necessity
+        id: build_check
+        run: |
+          FORCE_REBUILD="${{ github.event.inputs.force_rebuild || 'false' }}"
+          
+          if [[ "$FORCE_REBUILD" == "true" ]]; then
+            echo "Force rebuild requested, skipping optimization checks"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "reason=force_rebuild" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # For PR builds, always build
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "Pull request detected, building for validation"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "reason=pull_request" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if this is a push to main/master
+          if [[ "${{ github.event_name }}" == "push" && ("${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/master") ]]; then
+            echo "Push to main branch detected, checking for changes"
+            
+            # Check if only documentation changed
+            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+            if echo "$CHANGED_FILES" | grep -qvE '\.(md|txt)$|^docs/|^\.rpm-integration-docs/'; then
+              echo "Non-documentation changes detected, build required"
+              echo "should_build=true" >> $GITHUB_OUTPUT
+              echo "reason=code_changes" >> $GITHUB_OUTPUT
+            else
+              echo "Only documentation changes detected, build may be skipped"
+              echo "should_build=maybe" >> $GITHUB_OUTPUT
+              echo "reason=docs_only" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "Scheduled or manual build, proceeding with optimization checks"
+            echo "should_build=maybe" >> $GITHUB_OUTPUT
+            echo "reason=scheduled" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Detect base image kernel version
+        id: kernel
+        run: |
+          # Extract kernel version from Aurora base image
+          BASE_IMAGE=$(grep "base-image:" recipes/${{ matrix.recipe }} | awk '{print $2}')
+          IMAGE_VERSION=$(grep "image-version:" recipes/${{ matrix.recipe }} | awk '{print $2}')
+          FULL_IMAGE="${BASE_IMAGE}:${IMAGE_VERSION}"
+          
+          echo "Detecting kernel version from base image: $FULL_IMAGE"
+          
+          # Get kernel version from image labels
+          KERNEL_VERSION=$(skopeo inspect docker://$FULL_IMAGE | jq -r '.Labels["ostree.linux"] // empty')
+          
+          if [[ -z "$KERNEL_VERSION" ]]; then
+            echo "Warning: Could not detect kernel version from image labels, trying alternative method..."
+            # Fallback: try to get from image config
+            KERNEL_VERSION=$(skopeo inspect docker://$FULL_IMAGE | jq -r '.Config.Labels["ostree.linux"] // empty')
+          fi
+          
+          if [[ -z "$KERNEL_VERSION" ]]; then
+            echo "Error: Could not detect kernel version from base image"
+            exit 1
+          fi
+          
+          # Extract Fedora version from kernel version
+          FEDORA_VERSION=$(echo "$KERNEL_VERSION" | sed -n 's/.*\.fc\([0-9]\+\)\..*/\1/p')
+          if [[ -z "$FEDORA_VERSION" ]]; then
+            echo "Warning: Could not extract Fedora version, defaulting to 41"
+            FEDORA_VERSION="41"
+          fi
+          
+          echo "version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+          echo "fedora_version=$FEDORA_VERSION" >> $GITHUB_OUTPUT
+          echo "base_image=$FULL_IMAGE" >> $GITHUB_OUTPUT
+          
+          echo "Detected kernel version: $KERNEL_VERSION"
+          echo "Detected Fedora version: $FEDORA_VERSION"
+
+      - name: Check Aurora base image changes
+        id: aurora_check
+        run: |
+          BASE_IMAGE="${{ steps.kernel.outputs.base_image }}"
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          
+          # Get the digest of the current base image
+          CURRENT_DIGEST=$(skopeo inspect docker://$BASE_IMAGE | jq -r '.Digest')
+          
+          # Check if we have a previous build with the same kernel version
+          CACHE_KEY="aurora-${KERNEL_VERSION}"
+          
+          echo "current_digest=$CURRENT_DIGEST" >> $GITHUB_OUTPUT
+          echo "cache_key=$CACHE_KEY" >> $GITHUB_OUTPUT
+          echo "Aurora base image digest: $CURRENT_DIGEST"
+          echo "Cache key: $CACHE_KEY"
+          
+          # Store digest for caching
+          mkdir -p .cache
+          echo "$CURRENT_DIGEST" > .cache/aurora-digest
+          echo "$KERNEL_VERSION" > .cache/kernel-version
+
+      - name: Cache Aurora base image info
+        uses: actions/cache@v4
+        id: aurora_cache
+        with:
+          path: .cache
+          key: ${{ steps.aurora_check.outputs.cache_key }}-${{ steps.aurora_check.outputs.current_digest }}
+          restore-keys: |
+            ${{ steps.aurora_check.outputs.cache_key }}-
+
+      - name: Get latest maccel version
+        id: maccel
+        run: |
+          # Get latest maccel version from upstream
+          MACCEL_VERSION=$(gh api repos/Gnarus-G/maccel/releases/latest --jq '.tag_name' | sed 's/^v//')
+          
+          if [[ -z "$MACCEL_VERSION" ]]; then
+            echo "Warning: Could not detect maccel version, defaulting to 1.0.0"
+            MACCEL_VERSION="1.0.0"
+          fi
+          
+          echo "version=$MACCEL_VERSION" >> $GITHUB_OUTPUT
+          echo "Latest maccel version: $MACCEL_VERSION"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Check for existing maccel packages
+        id: packages
+        run: |
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
+          
+          echo "Checking for existing packages with release tag: $RELEASE_TAG"
+          
+          # Check if release exists
+          if gh api repos/${{ github.repository_owner }}/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+            echo "Existing packages found for release: $RELEASE_TAG"
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+            echo "No existing packages found for release: $RELEASE_TAG"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Determine if build should proceed
+        id: final_build_check
+        run: |
+          INITIAL_CHECK="${{ steps.build_check.outputs.should_build }}"
+          AURORA_CACHE_HIT="${{ steps.aurora_cache.outputs.cache-hit }}"
+          PACKAGES_FOUND="${{ steps.packages.outputs.found }}"
+          
+          echo "Initial build check: $INITIAL_CHECK"
+          echo "Aurora cache hit: $AURORA_CACHE_HIT"
+          echo "Maccel packages found: $PACKAGES_FOUND"
+          
+          # Force build conditions
+          if [[ "$INITIAL_CHECK" == "true" ]]; then
+            echo "Build required due to: ${{ steps.build_check.outputs.reason }}"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "skip_reason=none" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Optimization conditions
+          if [[ "$AURORA_CACHE_HIT" == "true" && "$PACKAGES_FOUND" == "true" ]]; then
+            echo "Both Aurora base and maccel packages unchanged - build can be skipped"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "skip_reason=no_changes" >> $GITHUB_OUTPUT
+          else
+            if [[ "$AURORA_CACHE_HIT" != "true" ]]; then
+              echo "Aurora base image has changed - build required"
+            fi
+            if [[ "$PACKAGES_FOUND" != "true" ]]; then
+              echo "Maccel packages need to be built - build required"
+            fi
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "skip_reason=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Report build decision
+        run: |
+          SHOULD_BUILD="${{ steps.final_build_check.outputs.should_build }}"
+          SKIP_REASON="${{ steps.final_build_check.outputs.skip_reason }}"
+          
+          if [[ "$SHOULD_BUILD" == "true" ]]; then
+            echo "✅ Build will proceed"
+          else
+            echo "⏭️ Build will be skipped: $SKIP_REASON"
+            echo "To force a build, use workflow_dispatch with force_rebuild=true"
+          fi
+
+      - name: Trigger maccel build if needed
+        if: steps.packages.outputs.found == 'false' && steps.final_build_check.outputs.should_build == 'true'
+        run: |
+          echo "Triggering maccel RPM build..."
+          
+          # Send repository dispatch to maccel-rpm-builder
+          gh api repos/${{ github.repository_owner }}/maccel-rpm-builder/dispatches \
+            --method POST \
+            --field event_type=build-for-kernel \
+            --field client_payload="{
+              \"kernel_version\": \"${{ steps.kernel.outputs.version }}\",
+              \"fedora_version\": \"${{ steps.kernel.outputs.fedora_version }}\",
+              \"trigger_repo\": \"${{ github.repository }}\",
+              \"maccel_version\": \"${{ steps.maccel.outputs.version }}\"
+            }"
+          
+          echo "Repository dispatch sent successfully"
+        env:
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+
+      - name: Wait for maccel build completion
+        if: steps.packages.outputs.found == 'false' && steps.final_build_check.outputs.should_build == 'true'
+        run: |
+          echo "Waiting for maccel build to complete..."
+          
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
+          MAX_WAIT=1800  # 30 minutes
+          POLL_INTERVAL=30  # 30 seconds
+          WAIT_TIME=0
+          
+          while [[ $WAIT_TIME -lt $MAX_WAIT ]]; do
+            echo "Checking for packages... (waited ${WAIT_TIME}s)"
+            
+            if gh api repos/abirkel/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
+              echo "Packages are now available!"
+              break
+            fi
+            
+            echo "Packages not ready yet, waiting ${POLL_INTERVAL}s..."
+            sleep $POLL_INTERVAL
+            WAIT_TIME=$((WAIT_TIME + POLL_INTERVAL))
+          done
+          
+          if [[ $WAIT_TIME -ge $MAX_WAIT ]]; then
+            echo "Error: Timeout waiting for packages after ${MAX_WAIT}s"
+            echo "Build will continue, but maccel integration may fail"
+            echo "Check maccel-rpm-builder workflow status manually"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       # the build is fully handled by the reusable github action
       - name: Build Custom Image
+        if: steps.final_build_check.outputs.should_build == 'true'
         uses: blue-build/github-action@v1.9
         with:
           recipe: ${{ matrix.recipe }}
-          cosign_private_key: ${{ secrets.SIGNING_SECRET }}
+          # Using keyless signing (recommended) - omit cosign_private_key for keyless signing
+          # cosign_private_key: ${{ secrets.SIGNING_SECRET }}  # Only for private key signing
           registry_token: ${{ github.token }}
           pr_event_number: ${{ github.event.number }}
-
           # enabled by default, disable if your image is small and you want faster builds
           maximize_build_space: true
+        env:
+          # Pass environment variables for maccel-rpm-builder integration
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          MACCEL_KERNEL_VERSION: ${{ steps.kernel.outputs.version }}
+          MACCEL_VERSION: ${{ steps.maccel.outputs.version }}
+          MACCEL_FEDORA_VERSION: ${{ steps.kernel.outputs.fedora_version }}
+          MACCEL_PACKAGES_AVAILABLE: ${{ steps.packages.outputs.found }}
+          MACCEL_RELEASE_TAG: ${{ steps.packages.outputs.release_tag }}
+          # Pass GitHub token for maccel-rpm-builder dispatch
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          # Uncomment to pin maccel to a specific version (default: latest)
+          # MACCEL_VERSION: "0.4.1"
+
+      - name: Generate additional image tags
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        id: tags
+        run: |
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          FEDORA_VERSION="${{ steps.kernel.outputs.fedora_version }}"
+          TIMESTAMP=$(date -u +"%Y%m%d")
+          
+          # Generate semantic tags
+          KERNEL_TAG="kernel-${KERNEL_VERSION}"
+          MACCEL_TAG="maccel-${MACCEL_VERSION}"
+          FEDORA_TAG="fedora-${FEDORA_VERSION}"
+          DATE_TAG="${TIMESTAMP}"
+          
+          echo "kernel_tag=${KERNEL_TAG}" >> $GITHUB_OUTPUT
+          echo "maccel_tag=${MACCEL_TAG}" >> $GITHUB_OUTPUT
+          echo "fedora_tag=${FEDORA_TAG}" >> $GITHUB_OUTPUT
+          echo "date_tag=${DATE_TAG}" >> $GITHUB_OUTPUT
+          
+          echo "Generated tags:"
+          echo "  - ${KERNEL_TAG}"
+          echo "  - ${MACCEL_TAG}"
+          echo "  - ${FEDORA_TAG}"
+          echo "  - ${DATE_TAG}"
+
+      - name: Tag image with additional tags
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild"
+          
+          # Pull the latest image that was just built
+          podman pull "${IMAGE_NAME}:latest"
+          
+          # Tag with semantic versions
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
+          
+          # Push additional tags
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
+          
+          echo "Successfully tagged and pushed additional image tags"
+
+      - name: Validate image signing
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        run: |
+          echo "Validating image signature..."
+          
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild:latest"
+          
+          # Wait a moment for image to be fully available
+          sleep 10
+          
+          # Verify keyless signature (cosign provided by Blue Build action)
+          echo "Verifying keyless signature..."
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            "$IMAGE_NAME"
+          
+          echo "✅ Image signature validation successful!"
+
+      - name: Generate verification documentation
+        if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild"
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          
+          echo "=== Image Verification Commands ==="
+          echo ""
+          echo "# Verify latest image:"
+          echo "cosign verify \\"
+          echo "  --certificate-identity-regexp=\"https://github.com/${{ github.repository }}\" \\"
+          echo "  --certificate-oidc-issuer=\"https://token.actions.githubusercontent.com\" \\"
+          echo "  ${IMAGE_NAME}:latest"
+          echo ""
+          echo "# Verify kernel-specific tag:"
+          echo "cosign verify \\"
+          echo "  --certificate-identity-regexp=\"https://github.com/${{ github.repository }}\" \\"
+          echo "  --certificate-oidc-issuer=\"https://token.actions.githubusercontent.com\" \\"
+          echo "  ${IMAGE_NAME}:kernel-${KERNEL_VERSION}"
+          echo ""
+          echo "# Install with signature verification:"
+          echo "rpm-ostree rebase ostree-image-signed:docker://${IMAGE_NAME}:latest"
+          echo ""
+          echo "==================================="
+
+      - name: Report build completion
+        if: always()
+        run: |
+          BUILD_STATUS="${{ job.status }}"
+          SHOULD_BUILD="${{ steps.final_build_check.outputs.should_build }}"
+          SKIP_REASON="${{ steps.final_build_check.outputs.skip_reason }}"
+          
+          echo "=== Build Report ==="
+          echo "Job Status: $BUILD_STATUS"
+          echo "Should Build: $SHOULD_BUILD"
+          
+          if [[ "$SHOULD_BUILD" == "false" ]]; then
+            echo "Build Status: SKIPPED ($SKIP_REASON)"
+            echo "Aurora Base: ${{ steps.kernel.outputs.base_image }}"
+            echo "Kernel Version: ${{ steps.kernel.outputs.version }}"
+            echo "Maccel Version: ${{ steps.maccel.outputs.version }}"
+            echo "Cache Hit: ${{ steps.aurora_cache.outputs.cache-hit }}"
+            echo "Packages Available: ${{ steps.packages.outputs.found }}"
+          elif [[ "$BUILD_STATUS" == "success" ]]; then
+            echo "Build Status: SUCCESS"
+            echo "Image Built: ghcr.io/${{ github.repository_owner }}/myaurorabluebuild:latest"
+            echo "Aurora Base: ${{ steps.kernel.outputs.base_image }}"
+            echo "Kernel Version: ${{ steps.kernel.outputs.version }}"
+            echo "Maccel Version: ${{ steps.maccel.outputs.version }}"
+            echo "Packages Used: ${{ steps.packages.outputs.release_tag }}"
+            echo "Signature: Keyless cosign (GitHub OIDC)"
+            echo "Verification: See commands above"
+          else
+            echo "Build Status: FAILED"
+            echo "Check the logs above for error details"
+          fi
+          echo "=================="
+
+      - name: Update build cache on success
+        if: success() && steps.final_build_check.outputs.should_build == 'true'
+        run: |
+          # Update cache with successful build info
+          echo "Build completed successfully at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > .cache/last-successful-build
+          echo "${{ steps.kernel.outputs.version }}" > .cache/last-kernel-version
+          echo "${{ steps.maccel.outputs.version }}" > .cache/last-maccel-version
+          echo "Cache updated for future build optimizations"
+
+      - name: Clean up old container images
+        if: (success() || failure()) && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
+        uses: snok/container-retention-policy@v3.0.0
+        with:
+          image-names: myaurorabluebuild
+          cut-off: 60 days ago UTC  # Keep images for 2 months
+          account-type: personal
+          org-name: ${{ github.repository_owner }}
+          keep-at-least: 5  # Always keep at least 5 images
+          untagged-only: false  # Clean both tagged and untagged
+          skip-tags: latest  # Never delete 'latest' tag
+          token: ${{ github.token }}
+

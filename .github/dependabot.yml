@@ -1,6 +1,21 @@
 version: 2
 updates:
+  # GitHub Actions updates
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    commit-message:
+      prefix: "ci"
+      prefix-development: "ci"
+      include: "scope"
+    reviewers:
+      - "@abirkel"
+    assignees:
+      - "@abirkel"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-requests-limit: 5
