@@ -1,0 +1,36 @@
+Name:           maccel
+Version:        {{MACCEL_VERSION}}
+Release:        1%{?dist}
+Summary:        CLI tools for maccel mouse acceleration
+License:        {{LICENSE}}
+URL:            https://github.com/Gnarus-G/maccel
+Source0:        {{SOURCE_URL}}
+
+BuildRequires:  rust
+BuildRequires:  cargo
+
+Requires:       akmod-maccel = %{version}-%{release}
+
+%description
+Command-line interface tools for configuring maccel mouse acceleration.
+
+%prep
+%setup -q -n maccel-%{version}
+
+%build
+cargo build --release
+
+%install
+install -D -m 0755 target/release/maccel %{buildroot}%{_bindir}/maccel
+install -D -m 0644 udev/99-maccel.rules %{buildroot}%{_udevrulesdir}/99-maccel.rules
+
+%post
+groupadd -r maccel 2>/dev/null || :
+udevadm control --reload-rules || :
+
+%files
+%{_bindir}/maccel
+%{_udevrulesdir}/99-maccel.rules
+
+%changelog
+{{CHANGELOG}}
