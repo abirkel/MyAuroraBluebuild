@@ -1,0 +1,4 @@
+# This directory stores cached RPM spec files organized by maccel version
+# Example structure:
+#   specs/maccel-0.4.1/
+#   specs/maccel-0.4.2/

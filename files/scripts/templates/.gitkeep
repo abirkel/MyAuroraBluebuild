@@ -1,0 +1,4 @@
+# This directory stores RPM spec file templates for maccel packages
+# Templates:
+#   akmod-maccel.spec.template - AKMOD kernel module spec
+#   maccel.spec.template - CLI tools spec
