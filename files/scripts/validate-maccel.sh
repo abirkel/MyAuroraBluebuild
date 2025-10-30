@@ -6,15 +6,15 @@ set -euo pipefail
 
 # Logging functions
 log_info() {
-    echo "[VALIDATE] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo "[VALIDATE] $1"
 }
 
 log_error() {
-    echo "[VALIDATE-ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+    echo "[VALIDATE-ERROR] $1" >&2
 }
 
 log_warn() {
-    echo "[VALIDATE-WARN] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+    echo "[VALIDATE-WARN] $1" >&2
 }
 
 # Function to validate maccel group

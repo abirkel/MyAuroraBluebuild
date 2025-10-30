@@ -10,11 +10,11 @@ MACCEL_UPSTREAM_REPO="Gnarus-G/maccel"
 
 # Logging functions
 log_info() {
-    echo "[CHECK] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo "[CHECK] $1"
 }
 
 log_error() {
-    echo "[CHECK-ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+    echo "[CHECK-ERROR] $1" >&2
 }
 
 # Function to check if a release exists

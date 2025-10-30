@@ -13,15 +13,15 @@ POLL_INTERVAL=30    # Poll every 30 seconds
 
 # Logging functions
 log_info() {
-    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $1"
+    echo "[INFO] $1"
 }
 
 log_error() {
-    echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+    echo "[ERROR] $1" >&2
 }
 
 log_warn() {
-    echo "[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+    echo "[WARN] $1" >&2
 }
 
 # Function to detect kernel version from current system
