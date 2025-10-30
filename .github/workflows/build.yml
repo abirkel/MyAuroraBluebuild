@@ -164,6 +164,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      - name: Check for existing maccel packages
+        id: packages
+        run: |
+          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
+          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
+          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
+          
+          echo "Checking for existing packages with release tag: $RELEASE_TAG"
+          
+          # Check if release exists
+          if gh api repos/abirkel/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+            echo "Existing packages found for release: $RELEASE_TAG"
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
+            echo "No existing packages found for release: $RELEASE_TAG"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Determine if build should proceed
         id: final_build_check
         run: |
@@ -198,28 +220,6 @@ jobs:
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "skip_reason=none" >> $GITHUB_OUTPUT
           fi
-
-      - name: Check for existing maccel packages
-        id: packages
-        run: |
-          KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
-          MACCEL_VERSION="${{ steps.maccel.outputs.version }}"
-          RELEASE_TAG="kernel-${KERNEL_VERSION}-maccel-${MACCEL_VERSION}"
-          
-          echo "Checking for existing packages with release tag: $RELEASE_TAG"
-          
-          # Check if release exists
-          if gh api repos/abirkel/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
-            echo "found=true" >> $GITHUB_OUTPUT
-            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
-            echo "Existing packages found for release: $RELEASE_TAG"
-          else
-            echo "found=false" >> $GITHUB_OUTPUT
-            echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
-            echo "No existing packages found for release: $RELEASE_TAG"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Report build decision
         run: |
