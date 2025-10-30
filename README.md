@@ -84,15 +84,6 @@ cosign verify \
   ghcr.io/abirkel/myaurorabluebuild:latest
 ```
 
-**Using public key (if available):**
-```bash
-# Download the public key
-curl -O https://raw.githubusercontent.com/abirkel/MyAuroraBluebuild/main/cosign.pub
-
-# Verify with public key
-cosign verify --key cosign.pub ghcr.io/abirkel/myaurorabluebuild:latest
-```
-
 ### Verification Before Installation
 
 For maximum security, verify the image signature before rebasing:
