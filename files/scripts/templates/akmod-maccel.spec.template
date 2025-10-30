@@ -1,0 +1,38 @@
+Name:           akmod-maccel
+Version:        {{MACCEL_VERSION}}
+Release:        1%{?dist}
+Summary:        Akmod package for maccel mouse acceleration kernel module
+License:        {{LICENSE}}
+URL:            https://github.com/Gnarus-G/maccel
+Source0:        {{SOURCE_URL}}
+
+BuildRequires:  kmodtool
+BuildRequires:  akmods
+BuildRequires:  gcc
+BuildRequires:  make
+
+Requires:       akmods
+
+%description
+This package provides the akmod package for the maccel mouse acceleration
+kernel module. The kernel module will be automatically rebuilt for new kernels.
+
+# Kmodtool does the rest
+%{expand:%(kmodtool --target %{_target_cpu} --repo rpmfusion --kmodname maccel %{?buildforkernels:--%{buildforkernels}} %{?kernels:--for-kernels "%{?kernels}"} 2>/dev/null)}
+
+%prep
+%setup -q -n maccel-%{version}
+
+%build
+# Build is handled by akmods at install time
+
+%install
+# Install source for akmods to build from
+mkdir -p %{buildroot}%{_usrsrc}/akmods/maccel-%{version}
+cp -r kmod/* %{buildroot}%{_usrsrc}/akmods/maccel-%{version}/
+
+%files
+%{_usrsrc}/akmods/maccel-%{version}/
+
+%changelog
+{{CHANGELOG}}
