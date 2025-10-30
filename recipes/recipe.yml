@@ -6,8 +6,18 @@ name: myaurorabluebuild
 description: Aurora-based image with maccel mouse acceleration and custom packages
 
 # the base image to build on top of (FROM) and the version tag to use
+# Base image options:
+#   ghcr.io/ublue-os/aurora-nvidia  - NVIDIA drivers (default)
+#   ghcr.io/ublue-os/aurora         - AMD/Intel graphics
+#   ghcr.io/ublue-os/aurora-dx      - Developer experience variant
 base-image: ghcr.io/ublue-os/aurora-nvidia
-image-version: latest # Always use latest for automatic kernel updates
+
+# Version options:
+#   latest  - Automatic updates (recommended)
+#   40      - Fedora 40
+#   41      - Fedora 41
+#   stable  - Latest stable release
+image-version: latest
 
 # module configuration, executed in order
 # you can include multiple instances of the same module
