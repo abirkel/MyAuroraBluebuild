@@ -375,18 +375,10 @@ jobs:
           
           IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild:latest"
           
-          # Install cosign if not available
-          if ! command -v cosign &> /dev/null; then
-            echo "Installing cosign..."
-            curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
-            sudo mv cosign-linux-amd64 /usr/local/bin/cosign
-            sudo chmod +x /usr/local/bin/cosign
-          fi
-          
           # Wait a moment for image to be fully available
           sleep 10
           
-          # Verify keyless signature
+          # Verify keyless signature (cosign provided by Blue Build action)
           echo "Verifying keyless signature..."
           cosign verify \
             --certificate-identity-regexp="https://github.com/${{ github.repository }}" \
