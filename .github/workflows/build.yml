@@ -38,6 +38,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        run: |
+          if [[ -z "${{ secrets.DISPATCH_TOKEN }}" ]]; then
+            echo "❌ ERROR: DISPATCH_TOKEN secret is not set"
+            echo "This token is required for triggering maccel-rpm-builder workflows"
+            echo "Please set DISPATCH_TOKEN in repository secrets with 'repo' scope"
+            echo "See docs/SETUP_SECRETS.md for setup instructions"
+            exit 1
+          fi
+          echo "✅ DISPATCH_TOKEN is configured"
+
       - name: Check for build necessity
         id: build_check
         run: |
@@ -251,7 +262,7 @@ jobs:
           
           echo "Repository dispatch sent successfully"
         env:
-          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
 
       - name: Wait for maccel build completion
         if: steps.packages.outputs.found == 'false' && steps.final_build_check.outputs.should_build == 'true'
@@ -336,7 +347,7 @@ jobs:
           MACCEL_PACKAGES_AVAILABLE: ${{ steps.packages.outputs.found }}
           MACCEL_RELEASE_TAG: ${{ steps.packages.outputs.release_tag }}
           # Pass GitHub token for maccel-rpm-builder dispatch
-          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN || github.token }}
+          GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
 
       - name: Generate additional image tags
         if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
