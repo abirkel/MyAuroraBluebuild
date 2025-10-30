@@ -459,7 +459,7 @@ jobs:
 
       - name: Clean up old container images
         if: (success() || failure()) && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
-        uses: snok/container-retention-policy@v3.0.0
+        uses: snok/container-retention-policy@v3.0.1
         with:
           image-names: myaurorabluebuild
           cut-off: 60 days ago UTC  # Keep images for 2 months
