@@ -185,7 +185,7 @@ jobs:
           echo "Checking for existing packages with release tag: $RELEASE_TAG"
           
           # Check if release exists
-          if gh api repos/abirkel/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
+          if gh api repos/${{ github.repository_owner }}/maccel-rpm-builder/releases/tags/$RELEASE_TAG >/dev/null 2>&1; then
             echo "found=true" >> $GITHUB_OUTPUT
             echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
             echo "Existing packages found for release: $RELEASE_TAG"
@@ -250,7 +250,7 @@ jobs:
           echo "Triggering maccel RPM build..."
           
           # Send repository dispatch to maccel-rpm-builder
-          gh api repos/abirkel/maccel-rpm-builder/dispatches \
+          gh api repos/${{ github.repository_owner }}/maccel-rpm-builder/dispatches \
             --method POST \
             --field event_type=build-for-kernel \
             --field client_payload="{
@@ -341,6 +341,7 @@ jobs:
           maximize_build_space: true
         env:
           # Pass environment variables for maccel-rpm-builder integration
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
           MACCEL_KERNEL_VERSION: ${{ steps.kernel.outputs.version }}
           MACCEL_VERSION: ${{ steps.maccel.outputs.version }}
           MACCEL_FEDORA_VERSION: ${{ steps.kernel.outputs.fedora_version }}

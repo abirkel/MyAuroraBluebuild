@@ -6,7 +6,7 @@ set -euo pipefail
 # and installation of maccel mouse acceleration for MyAuroraBluebuild
 
 # Configuration
-MACCEL_RPM_BUILDER_REPO="abirkel/maccel-rpm-builder"
+MACCEL_RPM_BUILDER_REPO="${GITHUB_REPOSITORY_OWNER:-abirkel}/maccel-rpm-builder"
 MACCEL_UPSTREAM_REPO="Gnarus-G/maccel"
 MAX_WAIT_TIME=1800  # 30 minutes maximum wait time
 POLL_INTERVAL=30    # Poll every 30 seconds
