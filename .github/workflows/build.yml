@@ -352,19 +352,19 @@ jobs:
           IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/myaurorabluebuild"
           
           # Pull the latest image that was just built
-          docker pull "${IMAGE_NAME}:latest"
+          podman pull "${IMAGE_NAME}:latest"
           
           # Tag with semantic versions
-          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
-          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
-          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
-          docker tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
+          podman tag "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
           
           # Push additional tags
-          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
-          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
-          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
-          docker push "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.kernel_tag }}"
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.maccel_tag }}"
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.fedora_tag }}"
+          podman push "${IMAGE_NAME}:${{ steps.tags.outputs.date_tag }}"
           
           echo "Successfully tagged and pushed additional image tags"
 
