@@ -369,7 +369,7 @@ main() {
     
     # Step 7: Generate package URLs
     local package_urls
-    package_urls=($(generate_package_urls "$kernel_version" "$maccel_version" "$fedora_version"))
+    mapfile -t package_urls < <(generate_package_urls "$kernel_version" "$maccel_version" "$fedora_version")
     local kmod_url="${package_urls[0]}"
     local cli_url="${package_urls[1]}"
     

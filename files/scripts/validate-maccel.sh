@@ -44,20 +44,16 @@ validate_udev_rules() {
     log_info "✓ udev rules file exists: $rules_file"
     
     # Check for required content
-    local has_uinput=false
-    local has_input_events=false
     local has_maccel_group=false
     local has_correct_mode=false
     
     if grep -q "uinput" "$rules_file"; then
-        has_uinput=true
         log_info "✓ udev rules cover uinput device"
     else
         log_warn "⚠ udev rules may not cover uinput device"
     fi
     
     if grep -q "event.*input" "$rules_file"; then
-        has_input_events=true
         log_info "✓ udev rules cover input event devices"
     else
         log_warn "⚠ udev rules may not cover input event devices"

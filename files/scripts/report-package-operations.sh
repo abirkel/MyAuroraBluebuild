@@ -33,7 +33,6 @@ main() {
     # Report on RPM removals (from recipe.yml)
     log_info "RPM Packages - Removal Attempts:"
     local rpm_removals=("sunshine")
-    local removed_count=0
     local skipped_count=0
     
     for pkg in "${rpm_removals[@]}"; do
@@ -70,7 +69,6 @@ main() {
     # Report on Flatpak removals (from recipe.yml)
     log_info "Flatpak Applications - Removal Attempts:"
     local flatpak_removals=("org.mozilla.Thunderbird")
-    local flat_removed_count=0
     local flat_skipped_count=0
     
     for app in "${flatpak_removals[@]}"; do
