@@ -25,6 +25,11 @@ modules:
   # Custom maccel integration (must be first for dependencies)
   # This script handles kernel version detection, RPM package coordination,
   # and installation of maccel mouse acceleration
+  # 
+  # Maccel version configuration:
+  #   To pin to a specific version, set MACCEL_VERSION environment variable
+  #   in the GitHub Actions workflow (default: latest from upstream)
+  #   Example: MACCEL_VERSION: "0.4.1"
   - type: script
     scripts:
       - install-maccel.sh

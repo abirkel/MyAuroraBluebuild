@@ -58,8 +58,16 @@ extract_fedora_version() {
     echo "$fedora_version"
 }
 
-# Function to get latest maccel version from upstream
+# Function to get maccel version (respects MACCEL_VERSION env var for pinning)
 get_latest_maccel_version() {
+    # Check if version is pinned via environment variable
+    if [[ -n "${MACCEL_VERSION:-}" ]]; then
+        local pinned_version="${MACCEL_VERSION#v}"  # Remove 'v' prefix if present
+        log_info "Using pinned maccel version: $pinned_version"
+        echo "$pinned_version"
+        return 0
+    fi
+    
     log_info "Getting latest maccel version from upstream..."
     
     local maccel_version

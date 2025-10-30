@@ -319,6 +319,8 @@ jobs:
           MACCEL_RELEASE_TAG: ${{ steps.packages.outputs.release_tag }}
           # Pass GitHub token for maccel-rpm-builder dispatch
           GITHUB_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          # Uncomment to pin maccel to a specific version (default: latest)
+          # MACCEL_VERSION: "0.4.1"
 
       - name: Generate additional image tags
         if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
