@@ -53,5 +53,10 @@ modules:
         install:
           - org.keepassxc.KeePassXC  # Password manager
 
+  # Package operation reporting (provides visibility into what succeeded/failed)
+  - type: script
+    scripts:
+      - report-package-operations.sh
+
   # Image signing (must be last) - uses keyless signing by default
   - type: signing
