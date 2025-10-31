@@ -203,9 +203,9 @@ jobs:
           pr_event_number: ${{ github.event.number }}
           # enabled by default, disable if your image is small and you want faster builds
           maximize_build_space: true
-        env:
           # Uncomment to pin maccel to a specific version (default: latest)
-          # MACCEL_VERSION: "0.4.1"
+          # env:
+          #   MACCEL_VERSION: "0.4.1"
 
       - name: Generate additional image tags
         if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
