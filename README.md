@@ -47,22 +47,6 @@ rpm-ostree rebase ostree-image-signed:docker://ghcr.io/abirkel/myaurorabluebuild
 systemctl reboot
 ```
 
-### Migration from Vespera
-
-If you're migrating from the original Vespera installation:
-
-```bash
-# Remove existing Vespera installation
-rpm-ostree rebase fedora:fedora/41/x86_64/silverblue
-
-# Reboot to clean state
-systemctl reboot
-
-# Follow standard installation steps above
-```
-
-Your maccel configuration and user settings will be preserved in your home directory.
-
 ## Signature Verification
 
 ### Keyless Cosign Verification (Recommended)
@@ -170,7 +154,7 @@ This image is built using Blue Build's `recipe.yml` configuration. You can custo
 base-image: ghcr.io/ublue-os/aurora-nvidia
 image-version: latest
 
-# Alternative base images
+# Some alternative base images
 base-image: ghcr.io/ublue-os/aurora        # AMD/Intel graphics
 base-image: ghcr.io/ublue-os/silverblue   # GNOME desktop
 base-image: ghcr.io/ublue-os/kinoite      # KDE desktop
@@ -200,7 +184,6 @@ modules:
     remove:
       packages:
         - sunshine          # Remove game streaming
-        - openrazer-daemon  # Remove Razer support
     install:
       packages:
         - htop             # Process viewer
@@ -255,7 +238,7 @@ Create different recipe files for different use cases:
 
 ```
 recipes/
-├── recipe.yml           # Default variant
+├── recipe.yml          # Default variant
 ├── gaming.yml          # Gaming-focused
 ├── development.yml     # Development tools
 └── minimal.yml         # Minimal installation
@@ -403,26 +386,6 @@ MACCEL_VERSION=latest bash files/scripts/generate-maccel-specs.sh
 # Validate spec files with rpmlint (if testing locally)
 rpmlint specs/maccel-*/akmod-maccel.spec
 rpmlint specs/maccel-*/maccel.spec
-```
-
-### Performance Issues
-
-**Problem: Slow boot times**
-```bash
-# Check boot performance
-systemd-analyze blame
-
-# Disable unnecessary services
-sudo systemctl disable unwanted-service
-```
-
-**Problem: High memory usage**
-```bash
-# Check installed packages
-rpm -qa | wc -l
-
-# Remove unnecessary packages via recipe.yml
-# Rebuild image with fewer packages
 ```
 
 ### Getting Help
