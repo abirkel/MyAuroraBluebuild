@@ -1,7 +1,6 @@
 # Blue Build artifacts and development files
 .kiro/
 .vscode/
-.rpm-integration-docs/
 
 # Build artifacts
 *.rpm
