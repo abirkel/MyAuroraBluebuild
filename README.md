@@ -246,14 +246,7 @@ recipes/
 
 #### Custom Modules
 
-Refer to [Blue Build documentation](https://blue-build.org/reference/modules/) for available modules:
-
-- `dnf`: Package management
-- `default-flatpaks`: Flatpak management  
-- `script`: Custom scripts
-- `files`: File operations
-- `systemd`: Service management
-- `signing`: Image signing
+Refer to [Blue Build documentation](https://blue-build.org/reference/module/) for available modules.
 
 ## Troubleshooting
 
@@ -377,15 +370,30 @@ MACCEL_VERSION=latest bash files/scripts/generate-maccel-specs.sh
 
 **Problem: RPM build fails**
 ```bash
-# Check rpm-build module logs in GitHub Actions
+# Check builder stage logs in GitHub Actions
+# Look for build-or-fetch-maccel-rpms.sh output
 # Common issues:
-# 1. Missing build dependencies
+# 1. Missing build dependencies in builder stage
 # 2. Spec file syntax errors
 # 3. Source download failures
+# 4. GitHub Releases upload failures
 
 # Validate spec files with rpmlint (if testing locally)
 rpmlint specs/maccel-*/akmod-maccel.spec
 rpmlint specs/maccel-*/maccel.spec
+```
+
+**Problem: RPMs not found in GitHub Releases**
+```bash
+# Check if release exists
+gh release list --repo YOUR_USERNAME/MyAuroraBluebuild | grep rpms-maccel
+
+# View release details
+gh release view rpms-maccel-0.4.1-fc41 --repo YOUR_USERNAME/MyAuroraBluebuild
+
+# If release is missing, trigger a rebuild
+# The build will create the release automatically
+gh workflow run build.yml
 ```
 
 ### Getting Help
@@ -405,42 +413,45 @@ MyAuroraBluebuild uses a self-contained build system that generates RPM spec fil
 ### Build Flow
 
 ```mermaid
-graph LR
-    A[Aurora Base Image] --> B[Spec File Generator]
-    B --> C{Cached Specs?}
-    C -->|Yes| D[Use Cached Specs]
-    C -->|No| E[Generate from Templates]
-    E --> F[Fetch Metadata from GitHub]
-    F --> G[Create Spec Files]
-    G --> H[Validate with rpmlint]
-    H --> I[Cache Specs]
-    D --> J[Blue Build rpm-build Module]
-    I --> J
-    J --> K[Build AKMOD Package]
-    J --> L[Build CLI Package]
-    K --> M[Final Image]
-    L --> M
+graph TB
+    A[Aurora Base Image] --> B[Builder Stage: fedora-toolbox]
+    B --> C[Generate Spec Files]
+    C --> D{GitHub Releases<br/>Has RPMs?}
+    D -->|Yes| E[Download RPMs]
+    D -->|No| F[Build RPMs with rpmbuild]
+    F --> G[Upload to GitHub Releases]
+    G --> H[RPMs Ready]
+    E --> H
+    H --> I[Main Stage: Aurora]
+    I --> J[Copy RPMs from Builder]
+    J --> K[Install with dnf]
+    K --> L[Final Image]
 ```
 
 ### Key Components
 
 - **Aurora Base**: Provides KDE desktop with gaming optimizations
-- **Blue Build Framework**: Declarative image building with YAML configuration
+- **Blue Build Stages**: Multi-stage build with dedicated RPM builder stage
+- **Builder Stage**: Uses `fedora-toolbox` image with build tools pre-installed
 - **Spec File Generator**: On-demand generation of RPM spec files from templates
 - **Spec File Cache**: Version-organized cache of generated specs for reuse
+- **GitHub Releases Cache**: Pre-built RPMs cached in GitHub Releases for fast builds
 - **AKMOD Integration**: Automatic kernel module rebuilding for new kernels
-- **rpm-build Module**: Direct RPM package building within Blue Build
 - **Cosign Signing**: Keyless image signing for supply chain security
 
 ### Self-Contained Approach
 
-The build system is completely self-contained:
+The build system is completely self-contained with intelligent caching:
 
 1. **No External Dependencies**: All RPM building happens within the Blue Build process
 2. **Template-Based**: Spec files generated from templates with metadata from upstream
-3. **Cached for Efficiency**: Generated specs cached by version to avoid regeneration
+3. **Multi-Level Caching**: 
+   - Spec files cached by version in repository
+   - Built RPMs cached in GitHub Releases
+   - Builder stage cached by Docker layers
 4. **AKMOD for Compatibility**: Kernel modules automatically rebuild for new kernels
-5. **Transparent**: All spec files committed to repository for auditability
+5. **Fast Builds**: Downloads pre-built RPMs when available, builds only when needed
+6. **Transparent**: All spec files committed to repository for auditability
 
 ## Migration from Vespera
 
@@ -528,7 +539,8 @@ The build system is completely self-contained:
 
 ```bash
 # Install Blue Build CLI (optional, for local testing)
-curl -s https://blue-build.org/install.sh | bash
+# See https://github.com/blue-build/cli for installation options
+cargo install --locked blue-build
 
 # Validate recipe syntax
 bluebuild validate recipes/recipe.yml
