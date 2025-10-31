@@ -89,12 +89,12 @@ jobs:
           echo "Detecting kernel version from base image: $FULL_IMAGE"
           
           # Get kernel version from image labels
-          KERNEL_VERSION=$(skopeo inspect docker://$FULL_IMAGE | jq -r '.Labels["ostree.linux"] // empty')
+          KERNEL_VERSION=$(skopeo inspect "docker://$FULL_IMAGE" | jq -r '.Labels["ostree.linux"] // empty')
           
           if [[ -z "$KERNEL_VERSION" ]]; then
             echo "Warning: Could not detect kernel version from image labels, trying alternative method..."
             # Fallback: try to get from image config
-            KERNEL_VERSION=$(skopeo inspect docker://$FULL_IMAGE | jq -r '.Config.Labels["ostree.linux"] // empty')
+            KERNEL_VERSION=$(skopeo inspect "docker://$FULL_IMAGE" | jq -r '.Config.Labels["ostree.linux"] // empty')
           fi
           
           if [[ -z "$KERNEL_VERSION" ]]; then
@@ -123,7 +123,7 @@ jobs:
           KERNEL_VERSION="${{ steps.kernel.outputs.version }}"
           
           # Get the digest of the current base image
-          CURRENT_DIGEST=$(skopeo inspect docker://$BASE_IMAGE | jq -r '.Digest')
+          CURRENT_DIGEST=$(skopeo inspect "docker://$BASE_IMAGE" | jq -r '.Digest')
           
           # Check if we have a previous build with the same kernel version
           CACHE_KEY="aurora-${KERNEL_VERSION}"
