@@ -143,7 +143,7 @@ gh workflow run build.yml --field force_rebuild=true
 
 ### 3. Maccel Integration Updates
 
-Maccel updates require coordination with maccel-rpm-builder.
+Maccel updates are handled automatically through the self-contained spec generation system.
 
 #### Update Process
 
@@ -153,31 +153,172 @@ Maccel updates require coordination with maccel-rpm-builder.
 gh api repos/Gnarus-G/maccel/releases/latest --jq '.tag_name'
 ```
 
-2. **Coordinate with maccel-rpm-builder**:
-- Check if maccel-rpm-builder supports new version
-- Trigger builds for current kernel versions if needed
-- Verify package availability
+2. **Update to Latest Version** (Automatic):
+- By default, the system uses the latest maccel version
+- Spec files are generated automatically on first build
+- Cached for subsequent builds with the same version
 
-3. **Test Integration**:
-```bash
-# Trigger build to test new maccel version
-gh workflow run build.yml --field force_rebuild=true
+3. **Pin to Specific Version** (Optional):
+```yaml
+# In .github/workflows/build.yml or recipe.yml
+env:
+  MACCEL_VERSION: "0.4.1"  # Pin to specific version
 ```
 
-4. **Validate Functionality**:
+4. **Force Regeneration** (if needed):
+```bash
+# Set environment variable to force spec regeneration
+FORCE_REGENERATE=true
+
+# Or delete cached specs
+rm -rf specs/maccel-*
+```
+
+5. **Test Integration**:
+```bash
+# Trigger build to test new maccel version
+gh workflow run build.yml
+```
+
+6. **Validate Functionality**:
 - Test maccel CLI in new image
-- Verify kernel module loads correctly
+- Verify AKMOD rebuilds kernel module correctly
 - Check udev rules and permissions
 - Test non-root user access
 
 #### Maccel Update Checklist
 
 - [ ] Monitor maccel upstream releases
-- [ ] Coordinate with maccel-rpm-builder maintainer
-- [ ] Verify package builds for current kernels
+- [ ] Decide whether to pin version or use latest
+- [ ] Update MACCEL_VERSION if pinning
+- [ ] Trigger build to generate new specs
 - [ ] Test maccel functionality in new image
 - [ ] Update documentation if CLI changes
 - [ ] Notify users of significant changes
+
+#### Spec Cache Management
+
+The spec cache stores generated RPM spec files organized by maccel version:
+
+```
+specs/
+├── maccel-0.4.1/
+│   ├── akmod-maccel.spec
+│   ├── maccel.spec
+│   └── metadata.json
+└── maccel-0.4.2/
+    ├── akmod-maccel.spec
+    ├── maccel.spec
+    └── metadata.json
+```
+
+**Cache Operations**:
+
+```bash
+# List cached versions
+ls -la specs/
+
+# View metadata for a cached version
+cat specs/maccel-0.4.1/metadata.json
+
+# Remove old cached versions (optional cleanup)
+rm -rf specs/maccel-0.4.0
+
+# Force regeneration of cached specs
+FORCE_REGENERATE=true bash files/scripts/generate-maccel-specs.sh
+```
+
+**When to Regenerate Specs**:
+- Template files have been updated
+- Upstream maccel metadata has changed
+- Spec files need corrections or improvements
+- Testing new spec configurations
+
+#### Template Customization
+
+Spec file templates are located in `files/templates/`:
+
+- `akmod-maccel.spec.template` - AKMOD kernel module package
+- `maccel.spec.template` - CLI tools package
+
+**Template Variables**:
+- `{{MACCEL_VERSION}}` - Version number (e.g., 0.4.1)
+- `{{LICENSE}}` - License identifier from upstream
+- `{{SOURCE_URL}}` - Tarball download URL
+- `{{CHANGELOG}}` - Formatted changelog entries
+
+**Customization Process**:
+
+1. **Edit Template**:
+```bash
+# Edit the template file
+nano files/templates/akmod-maccel.spec.template
+```
+
+2. **Test Generation**:
+```bash
+# Generate specs with updated template
+FORCE_REGENERATE=true bash files/scripts/generate-maccel-specs.sh
+```
+
+3. **Validate Specs**:
+```bash
+# Validate with rpmlint
+rpmlint specs/maccel-*/akmod-maccel.spec
+rpmlint specs/maccel-*/maccel.spec
+```
+
+4. **Test Build**:
+```bash
+# Trigger build to test updated specs
+gh workflow run build.yml
+```
+
+5. **Commit Changes**:
+```bash
+# Commit template and regenerated specs
+git add files/templates/
+git add specs/
+git commit -m "Update spec templates"
+```
+
+**Common Template Customizations**:
+- Adding build dependencies
+- Modifying installation paths
+- Adjusting file permissions
+- Adding post-install scripts
+- Customizing package metadata
+
+#### Version Pinning
+
+Control which maccel version to build:
+
+**Pin to Specific Version**:
+```yaml
+# In .github/workflows/build.yml
+env:
+  MACCEL_VERSION: "0.4.1"
+```
+
+**Use Latest Version** (default):
+```yaml
+# In .github/workflows/build.yml
+env:
+  MACCEL_VERSION: "latest"
+```
+
+**Or omit the variable entirely** - defaults to latest
+
+**Version Pinning Benefits**:
+- Reproducible builds
+- Stability for production images
+- Testing specific versions
+- Avoiding breaking changes
+
+**Version Pinning Considerations**:
+- Must manually update for new versions
+- May miss security updates
+- Requires monitoring upstream releases
 
 ### 4. Package Management Updates
 

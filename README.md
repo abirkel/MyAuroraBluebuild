@@ -7,11 +7,12 @@ A Blue Build-based custom image that provides [Aurora's](https://getaurora.dev/)
 ## Features
 
 - **Aurora Base**: Built on Universal Blue's Aurora-nvidia for optimal gaming performance with NVIDIA drivers
-- **Maccel Integration**: Pre-compiled mouse acceleration driver with CLI and TUI interfaces (no DKMS required)
+- **Maccel Integration**: Self-contained AKMOD-based mouse acceleration driver with automatic kernel module rebuilding
 - **Package Customization**: Remove unwanted packages, add preferred alternatives via Blue Build modules
 - **Blue Build Framework**: Standard tooling and community-supported approach for maintainability
 - **Cryptographic Signing**: Keyless cosign signing for supply chain security using GitHub OIDC
-- **Immutable System Optimized**: RPM packages integrated at build time, not runtime layering
+- **Immutable System Optimized**: RPM packages built and integrated at image build time
+- **Self-Contained Build**: No external dependencies - all RPM specs generated on-demand from templates
 
 ## Installation
 
@@ -101,19 +102,19 @@ rpm-ostree rebase ostree-image-signed:docker://ghcr.io/abirkel/myaurorabluebuild
 
 ## Maccel Usage
 
-After installation, maccel is ready to use immediately without additional setup:
+After installation, maccel is ready to use immediately. The AKMOD system automatically rebuilds the kernel module for new kernels.
 
 ### Initial Setup
 
 ```bash
-# Verify that the maccel module is loaded
-lsmod | grep maccel
-
 # Add your user to maccel group (one-time setup)
 sudo usermod -aG maccel $USER
 
 # Log out and back in for group changes to take effect
 # Or restart your session: sudo systemctl restart display-manager
+
+# Verify that the maccel module is loaded (after reboot)
+lsmod | grep maccel
 ```
 
 ### Using Maccel
@@ -151,6 +152,9 @@ ls -la /etc/udev/rules.d/99-maccel.rules
 
 # Check group membership
 groups | grep maccel
+
+# Verify AKMOD is configured (kernel module will rebuild automatically on kernel updates)
+ls -la /usr/src/akmods/
 ```
 
 ## Customization
@@ -170,6 +174,21 @@ image-version: latest
 base-image: ghcr.io/ublue-os/aurora        # AMD/Intel graphics
 base-image: ghcr.io/ublue-os/silverblue   # GNOME desktop
 base-image: ghcr.io/ublue-os/kinoite      # KDE desktop
+```
+
+#### Maccel Version Pinning
+
+Control which maccel version to build:
+
+```yaml
+# In recipe.yml or GitHub Actions workflow
+# Pin to specific version
+env:
+  MACCEL_VERSION: "0.4.1"
+
+# Or use latest (default)
+env:
+  MACCEL_VERSION: "latest"
 ```
 
 #### Package Management
@@ -295,8 +314,8 @@ rpm -q maccel
 # Verify PATH includes /usr/bin
 echo $PATH
 
-# Reinstall if missing (shouldn't happen with proper image)
-sudo rpm-ostree install maccel
+# Check if akmod-maccel is installed
+rpm -q akmod-maccel
 ```
 
 **Problem: maccel module not loaded**
@@ -304,11 +323,18 @@ sudo rpm-ostree install maccel
 # Check kernel module
 lsmod | grep maccel
 
-# Load manually if needed
-sudo modprobe maccel
+# AKMOD rebuilds automatically on boot for new kernels
+# Check akmods service status
+systemctl status akmods
 
-# Check for module loading errors
-dmesg | grep maccel
+# Check for module building errors
+journalctl -u akmods
+
+# Check AKMOD source files
+ls -la /usr/src/akmods/maccel-*
+
+# Manually trigger AKMOD rebuild if needed
+sudo akmods --force
 ```
 
 **Problem: Permission denied when using maccel**
@@ -347,16 +373,36 @@ systemctl --user enable --now maccel
 # Common issues:
 # 1. Recipe syntax errors - validate YAML
 # 2. Package conflicts - check dnf module configuration
-# 3. Maccel integration timeout - check maccel-rpm-builder status
+# 3. Spec generation errors - check generate-maccel-specs.sh logs
+# 4. RPM build failures - check rpm-build module logs
 ```
 
-**Problem: Maccel packages not found during build**
+**Problem: Spec file generation fails**
 ```bash
-# This indicates maccel-rpm-builder coordination failed
-# Check:
-# 1. GITHUB_TOKEN permissions
-# 2. maccel-rpm-builder repository status
-# 3. Kernel version compatibility
+# Check if maccel version exists
+# View available versions at: https://github.com/Gnarus-G/maccel/releases
+
+# Check spec generation logs in GitHub Actions
+# Look for errors in generate-maccel-specs.sh output
+
+# Verify template files exist
+ls -la files/templates/
+
+# Test spec generation locally (if you have the repo cloned)
+MACCEL_VERSION=latest bash files/scripts/generate-maccel-specs.sh
+```
+
+**Problem: RPM build fails**
+```bash
+# Check rpm-build module logs in GitHub Actions
+# Common issues:
+# 1. Missing build dependencies
+# 2. Spec file syntax errors
+# 3. Source download failures
+
+# Validate spec files with rpmlint (if testing locally)
+rpmlint specs/maccel-*/akmod-maccel.spec
+rpmlint specs/maccel-*/maccel.spec
 ```
 
 ### Performance Issues
@@ -391,27 +437,47 @@ rpm -qa | wc -l
 
 ## Architecture
 
-MyAuroraBluebuild uses a coordinated build system with [maccel-rpm-builder](../maccel-rpm-builder) to ensure maccel packages are built for the exact kernel version in the Aurora base image.
+MyAuroraBluebuild uses a self-contained build system that generates RPM spec files on-demand and builds maccel packages directly within the image build process.
 
 ### Build Flow
 
 ```mermaid
 graph LR
-    A[Aurora Base Image] --> B[Kernel Version Detection]
-    B --> C[Repository Dispatch]
-    C --> D[maccel-rpm-builder]
-    D --> E[RPM Packages]
-    E --> F[Blue Build Integration]
-    F --> G[Final Image]
+    A[Aurora Base Image] --> B[Spec File Generator]
+    B --> C{Cached Specs?}
+    C -->|Yes| D[Use Cached Specs]
+    C -->|No| E[Generate from Templates]
+    E --> F[Fetch Metadata from GitHub]
+    F --> G[Create Spec Files]
+    G --> H[Validate with rpmlint]
+    H --> I[Cache Specs]
+    D --> J[Blue Build rpm-build Module]
+    I --> J
+    J --> K[Build AKMOD Package]
+    J --> L[Build CLI Package]
+    K --> M[Final Image]
+    L --> M
 ```
 
 ### Key Components
 
 - **Aurora Base**: Provides KDE desktop with gaming optimizations
 - **Blue Build Framework**: Declarative image building with YAML configuration
-- **Maccel Integration**: Custom script coordinates with maccel-rpm-builder
-- **RPM Packages**: Pre-compiled maccel packages (no DKMS required)
+- **Spec File Generator**: On-demand generation of RPM spec files from templates
+- **Spec File Cache**: Version-organized cache of generated specs for reuse
+- **AKMOD Integration**: Automatic kernel module rebuilding for new kernels
+- **rpm-build Module**: Direct RPM package building within Blue Build
 - **Cosign Signing**: Keyless image signing for supply chain security
+
+### Self-Contained Approach
+
+The build system is completely self-contained:
+
+1. **No External Dependencies**: All RPM building happens within the Blue Build process
+2. **Template-Based**: Spec files generated from templates with metadata from upstream
+3. **Cached for Efficiency**: Generated specs cached by version to avoid regeneration
+4. **AKMOD for Compatibility**: Kernel modules automatically rebuild for new kernels
+5. **Transparent**: All spec files committed to repository for auditability
 
 ## Migration from Vespera
 
@@ -421,9 +487,11 @@ graph LR
 |--------|---------|-------------------|
 | Build System | Custom Containerfile | Blue Build Framework |
 | Configuration | vespera-config.yaml | recipe.yml |
-| Maccel Integration | DKMS compilation | Pre-built RPM packages |
+| Maccel Integration | DKMS compilation | AKMOD with on-demand spec generation |
+| Kernel Compatibility | Manual rebuilds | Automatic AKMOD rebuilds |
 | Signing | GPG keys | Keyless cosign |
 | Maintenance | Manual updates | Community tooling |
+| Dependencies | None | None (self-contained) |
 
 ### Migration Steps
 
@@ -462,8 +530,9 @@ graph LR
 ### What Changes
 
 - **System packages**: New package selection based on recipe.yml
-- **Maccel installation**: Now uses RPM packages instead of DKMS
+- **Maccel installation**: Now uses AKMOD for automatic kernel module rebuilding
 - **Update mechanism**: Blue Build framework instead of custom CI/CD
+- **Kernel updates**: AKMOD automatically rebuilds modules for new kernels
 
 ## Resources
 
@@ -480,9 +549,9 @@ graph LR
 - [Fedora Discussion](https://discussion.fedoraproject.org/) - General Fedora support
 
 ### Related Projects
-- [maccel-rpm-builder](../maccel-rpm-builder) - RPM package builder for maccel
 - [Universal Blue](https://universal-blue.org/) - Custom Fedora Atomic images
 - [Sigstore](https://www.sigstore.dev/) - Supply chain security and signing
+- [AKMOD](https://rpmfusion.org/Packaging/KernelModules/Akmods) - Automatic kernel module building system
 
 ## Contributing
 
