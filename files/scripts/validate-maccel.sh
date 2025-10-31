@@ -44,8 +44,8 @@ validate_udev_rules() {
     log_info "✓ udev rules file exists: $rules_file"
     
     # Check for required content
-    local has_maccel_group=false
-    local has_correct_mode=false
+    local has_maccel_group="false"
+    local has_correct_mode="false"
     
     if grep -q "uinput" "$rules_file"; then
         log_info "✓ udev rules cover uinput device"
@@ -60,14 +60,14 @@ validate_udev_rules() {
     fi
     
     if grep -q 'GROUP="maccel"' "$rules_file"; then
-        has_maccel_group=true
+        has_maccel_group="true"
         log_info "✓ udev rules specify maccel group"
     else
         log_error "✗ udev rules do not specify maccel group"
     fi
     
     if grep -q 'MODE="0660"' "$rules_file"; then
-        has_correct_mode=true
+        has_correct_mode="true"
         log_info "✓ udev rules specify correct permissions (0660)"
     else
         log_warn "⚠ udev rules may not have correct permissions"
@@ -108,11 +108,11 @@ validate_module_config() {
 validate_packages() {
     log_info "Validating installed maccel packages..."
     
-    local kmod_installed=false
-    local cli_installed=false
+    local kmod_installed="false"
+    local cli_installed="false"
     
     if rpm -q kmod-maccel >/dev/null 2>&1; then
-        kmod_installed=true
+        kmod_installed="true"
         local kmod_version
         kmod_version=$(rpm -q kmod-maccel --queryformat '%{VERSION}-%{RELEASE}')
         log_info "✓ kmod-maccel package installed: $kmod_version"
@@ -121,7 +121,7 @@ validate_packages() {
     fi
     
     if rpm -q maccel >/dev/null 2>&1; then
-        cli_installed=true
+        cli_installed="true"
         local cli_version
         cli_version=$(rpm -q maccel --queryformat '%{VERSION}-%{RELEASE}')
         log_info "✓ maccel CLI package installed: $cli_version"
@@ -163,27 +163,27 @@ validate_cli() {
 main() {
     log_info "Starting maccel configuration validation..."
     
-    local validation_passed=true
+    local validation_passed="true"
     
     # Run all validation checks
     if ! validate_maccel_group; then
-        validation_passed=false
+        validation_passed="false"
     fi
     
     if ! validate_udev_rules; then
-        validation_passed=false
+        validation_passed="false"
     fi
     
     if ! validate_module_config; then
-        validation_passed=false
+        validation_passed="false"
     fi
     
     if ! validate_packages; then
-        validation_passed=false
+        validation_passed="false"
     fi
     
     if ! validate_cli; then
-        validation_passed=false
+        validation_passed="false"
     fi
     
     # Summary

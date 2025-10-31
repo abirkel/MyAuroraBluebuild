@@ -11,14 +11,13 @@ echo "=== Maccel RPM Build/Fetch Script ==="
 REPO_OWNER="${GITHUB_REPOSITORY_OWNER:-abirkel}"
 REPO_NAME="${GITHUB_REPOSITORY_NAME:-MyAuroraBluebuild}"
 OUTPUT_DIR="/tmp/maccel-rpms"
-RPMBUILD_DIR="$HOME/rpmbuild"
 
 # Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
 
 # Get maccel version (should be set by generate-maccel-specs.sh)
 MACCEL_VERSION="${MACCEL_VERSION:-latest}"
-if [ "$MACCEL_VERSION" = "latest" ]; then
+if [[ "$MACCEL_VERSION" == "latest" ]]; then
     echo "Detecting latest maccel version..."
     MACCEL_VERSION=$(curl -s https://api.github.com/repos/Gnarus-G/maccel/releases/latest | jq -r '.tag_name' | sed 's/^v//')
     echo "Latest version: $MACCEL_VERSION"
@@ -48,7 +47,7 @@ check_release_exists() {
 
 # Function to download RPMs from release
 download_rpms() {
-    local tag=$1
+    local tag="$1"
     echo "Downloading RPMs from release $tag..."
     
     # Get release info
@@ -58,7 +57,7 @@ download_rpms() {
     # Download akmod-maccel RPM
     local akmod_url
     akmod_url=$(echo "$release_info" | jq -r '.assets[] | select(.name | startswith("akmod-maccel")) | .browser_download_url')
-    if [ -n "$akmod_url" ]; then
+    if [[ -n "$akmod_url" ]]; then
         echo "Downloading akmod-maccel..."
         curl -L -o "$OUTPUT_DIR/$(basename "$akmod_url")" "$akmod_url"
     else
@@ -69,7 +68,7 @@ download_rpms() {
     # Download maccel RPM
     local maccel_url
     maccel_url=$(echo "$release_info" | jq -r '.assets[] | select(.name | startswith("maccel-") and (startswith("akmod-") | not)) | .browser_download_url')
-    if [ -n "$maccel_url" ]; then
+    if [[ -n "$maccel_url" ]]; then
         echo "Downloading maccel..."
         curl -L -o "$OUTPUT_DIR/$(basename "$maccel_url")" "$maccel_url"
     else
@@ -80,15 +79,15 @@ download_rpms() {
     # Download checksums if available
     local checksums_url
     checksums_url=$(echo "$release_info" | jq -r '.assets[] | select(.name == "checksums.txt") | .browser_download_url')
-    if [ -n "$checksums_url" ]; then
+    if [[ -n "$checksums_url" ]]; then
         echo "Downloading checksums..."
         curl -L -o "$OUTPUT_DIR/checksums.txt" "$checksums_url"
         
         # Verify checksums
         echo "Verifying checksums..."
-        cd "$OUTPUT_DIR"
+        cd "$OUTPUT_DIR" || exit 1
         sha256sum -c checksums.txt
-        cd -
+        cd - > /dev/null || exit 1
     fi
     
     echo "✓ RPMs downloaded successfully"
@@ -100,13 +99,15 @@ build_rpms() {
     echo "Building RPMs from spec files..."
     
     # Check if spec files are available
-    if [ -z "${AKMOD_SPEC_PATH:-}" ] || [ -z "${MACCEL_SPEC_PATH:-}" ]; then
-        echo "ERROR: Spec file paths not set. Run generate-maccel-specs.sh first."
+    if [[ -z "${AKMOD_SPEC_PATH:-}" ]] || [[ -z "${MACCEL_SPEC_PATH:-}" ]]; then
+        echo "ERROR: Spec file paths not set. Run generate-maccel-specs.sh first." >&2
         exit 1
     fi
     
-    if [ ! -f "$AKMOD_SPEC_PATH" ] || [ ! -f "$MACCEL_SPEC_PATH" ]; then
-        echo "ERROR: Spec files not found"
+    if [[ ! -f "$AKMOD_SPEC_PATH" ]] || [[ ! -f "$MACCEL_SPEC_PATH" ]]; then
+        echo "ERROR: Spec files not found" >&2
+        echo "  AKMOD_SPEC_PATH: $AKMOD_SPEC_PATH" >&2
+        echo "  MACCEL_SPEC_PATH: $MACCEL_SPEC_PATH" >&2
         exit 1
     fi
     
@@ -126,30 +127,43 @@ build_rpms() {
     echo "Setting up rpmbuild directory..."
     rpmdev-setuptree
     
-    # Build akmod-maccel
+    # Build akmod-maccel with error checking
     echo "Building akmod-maccel..."
-    rpmbuild -ba "$AKMOD_SPEC_PATH"
+    if ! rpmbuild -ba "$AKMOD_SPEC_PATH"; then
+        echo "ERROR: Failed to build akmod-maccel package" >&2
+        echo "Check the rpmbuild logs above for details" >&2
+        exit 1
+    fi
+    echo "✓ akmod-maccel built successfully"
     
-    # Build maccel
+    # Build maccel with error checking
     echo "Building maccel..."
-    rpmbuild -ba "$MACCEL_SPEC_PATH"
+    if ! rpmbuild -ba "$MACCEL_SPEC_PATH"; then
+        echo "ERROR: Failed to build maccel package" >&2
+        echo "Check the rpmbuild logs above for details" >&2
+        exit 1
+    fi
+    echo "✓ maccel built successfully"
     
     # Copy built RPMs to output directory
     echo "Copying built RPMs..."
-    find "$RPMBUILD_DIR/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
+    if ! find "$HOME/rpmbuild/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \; ; then
+        echo "ERROR: Failed to copy built RPMs" >&2
+        exit 1
+    fi
     
     # Generate checksums
     echo "Generating checksums..."
-    cd "$OUTPUT_DIR"
-    sha256sum *.rpm > checksums.txt
-    cd -
+    cd "$OUTPUT_DIR" || exit 1
+    sha256sum ./*.rpm > checksums.txt
+    cd - > /dev/null || exit 1
     
     echo "✓ RPMs built successfully"
 }
 
 # Function to upload RPMs to GitHub Release
 upload_to_release() {
-    local tag=$1
+    local tag="$1"
     echo "Uploading RPMs to GitHub Release $tag..."
     
     # Check if gh CLI is available
@@ -160,7 +174,7 @@ upload_to_release() {
     fi
     
     # Check if GITHUB_TOKEN is available
-    if [ -z "${GITHUB_TOKEN:-}" ]; then
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
         echo "WARNING: GITHUB_TOKEN not set, skipping upload"
         echo "RPMs will be rebuilt on next run"
         return 0

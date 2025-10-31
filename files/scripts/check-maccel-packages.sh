@@ -56,15 +56,15 @@ verify_package_urls() {
     local kmod_url="$1"
     local cli_url="$2"
     
-    local kmod_accessible=false
-    local cli_accessible=false
+    local kmod_accessible="false"
+    local cli_accessible="false"
     
     if curl -I "$kmod_url" 2>/dev/null | grep -q "200 OK"; then
-        kmod_accessible=true
+        kmod_accessible="true"
     fi
     
     if curl -I "$cli_url" 2>/dev/null | grep -q "200 OK"; then
-        cli_accessible=true
+        cli_accessible="true"
     fi
     
     if [[ "$kmod_accessible" == "true" && "$cli_accessible" == "true" ]]; then

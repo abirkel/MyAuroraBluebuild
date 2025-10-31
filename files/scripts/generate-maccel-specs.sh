@@ -205,33 +205,16 @@ check_cache() {
         return 1
     fi
     
-    if [[ ! -d "$cache_dir" ]]; then
-        log_info "No cached specs found for version $version"
+    # Check all required files atomically to avoid TOCTOU race condition
+    if [[ ! -d "$cache_dir" ]] || \
+       [[ ! -f "$cache_dir/akmod-maccel.spec" ]] || \
+       [[ ! -f "$cache_dir/maccel.spec" ]] || \
+       [[ ! -f "$cache_dir/metadata.json" ]]; then
+        log_info "Cache incomplete or missing for version $version"
         return 1
     fi
     
-    log_info "Found cached specs directory: $cache_dir"
-    
-    # Validate cached files exist
-    local akmod_spec="$cache_dir/akmod-maccel.spec"
-    local maccel_spec="$cache_dir/maccel.spec"
-    local metadata="$cache_dir/metadata.json"
-    
-    if [[ ! -f "$akmod_spec" ]]; then
-        log_warn "Cached akmod spec missing, regenerating"
-        return 1
-    fi
-    
-    if [[ ! -f "$maccel_spec" ]]; then
-        log_warn "Cached maccel spec missing, regenerating"
-        return 1
-    fi
-    
-    if [[ ! -f "$metadata" ]]; then
-        log_warn "Cached metadata missing, regenerating"
-        return 1
-    fi
-    
+    log_info "Found complete cached specs for version $version"
     log_info "Cache validated successfully"
     return 0
 }

@@ -61,8 +61,21 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" && ("${{ github.ref }}" == "refs/heads/main" || "${{ github.ref }}" == "refs/heads/master") ]]; then
             echo "Push to main branch detected, checking for changes"
             
-            # Check if only documentation changed
-            CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+            # Check if only documentation changed using GitHub event context
+            # This works reliably in all contexts (shallow clones, first commit, etc.)
+            CHANGED_FILES="${{ toJson(github.event.commits.*.modified) }} ${{ toJson(github.event.commits.*.added) }}"
+            
+            # If GitHub event doesn't have file info, check git history if available
+            if [[ -z "$CHANGED_FILES" ]] || [[ "$CHANGED_FILES" == " " ]]; then
+              # Check if we have enough history for diff
+              if [[ $(git rev-list --count HEAD) -gt 1 ]]; then
+                CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git ls-files)
+              else
+                # First commit, consider all files changed
+                CHANGED_FILES=$(git ls-files)
+              fi
+            fi
+            
             if echo "$CHANGED_FILES" | grep -qvE '\.(md|txt)$|^docs/|^\.rpm-integration-docs/'; then
               echo "Non-documentation changes detected, build required"
               echo "should_build=true" >> $GITHUB_OUTPUT
