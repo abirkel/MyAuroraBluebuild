@@ -210,15 +210,10 @@ jobs:
         uses: blue-build/github-action@v1.9
         with:
           recipe: ${{ matrix.recipe }}
-          # Using keyless signing (recommended) - omit cosign_private_key for keyless signing
-          # cosign_private_key: ${{ secrets.SIGNING_SECRET }}  # Only for private key signing
+          cosign_private_key: ''  # Empty string enables keyless signing
           registry_token: ${{ github.token }}
           pr_event_number: ${{ github.event.number }}
-          # enabled by default, disable if your image is small and you want faster builds
           maximize_build_space: true
-          # Uncomment to pin maccel to a specific version (default: latest)
-          # env:
-          #   MACCEL_VERSION: "0.4.1"
 
       - name: Generate additional image tags
         if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
