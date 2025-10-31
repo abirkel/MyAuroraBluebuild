@@ -66,7 +66,7 @@ EOF
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TEMPLATES_DIR="$SCRIPT_DIR/templates"
+TEMPLATES_DIR="$WORKSPACE_ROOT/files/templates"
 SPECS_CACHE_DIR="$WORKSPACE_ROOT/specs"
 TEMP_DIR=""
 DRY_RUN=false
