@@ -94,9 +94,9 @@ jobs:
       - name: Detect base image kernel version
         id: kernel
         run: |
-          # Extract kernel version from Aurora base image
-          BASE_IMAGE=$(grep "base-image:" recipes/${{ matrix.recipe }} | awk '{print $2}')
-          IMAGE_VERSION=$(grep "image-version:" recipes/${{ matrix.recipe }} | awk '{print $2}')
+          # Extract kernel version from Aurora base image (main stage, not rpm-builder)
+          BASE_IMAGE=$(grep "^base-image:" recipes/${{ matrix.recipe }} | awk '{print $2}')
+          IMAGE_VERSION=$(grep "^image-version:" recipes/${{ matrix.recipe }} | awk '{print $2}')
           FULL_IMAGE="${BASE_IMAGE}:${IMAGE_VERSION}"
           
           echo "Detecting kernel version from base image: $FULL_IMAGE"
