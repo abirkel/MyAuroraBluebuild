@@ -210,10 +210,11 @@ jobs:
         uses: blue-build/github-action@v1.9
         with:
           recipe: ${{ matrix.recipe }}
-          cosign_private_key: ''  # Empty string enables keyless signing
           registry_token: ${{ github.token }}
           pr_event_number: ${{ github.event.number }}
           maximize_build_space: true
+        env:
+          BUILD_OPTS: --no-sign
 
       - name: Generate additional image tags
         if: success() && steps.final_build_check.outputs.should_build == 'true' && github.event_name != 'pull_request'
